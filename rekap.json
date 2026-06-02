@@ -1,0 +1,8 @@
+{
+  "botToken": "telegramtoken",
+  "ownerUserId": "chatid",
+  "spreadsheetId": "idsheet",
+  "sheetName": "Sheet1",
+  "credentialsFile": "./rekap-credentials.json",
+  "timezone": "Asia/Jakarta"
+}
