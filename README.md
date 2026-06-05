@@ -85,12 +85,15 @@ node rekap.js
 ---
 ## Available Commands
 
-| Command | Description |
-|----------|-------------|
-| /start | Start bot and show examples |
-| /help | Show transaction format |
-| /bulan | Show current month report |
-| /bulan MM YYYY | Show report for specific month |
+| Command                | Description                                   |
+|------------------------|-----------------------------------------------|
+| `/start`               | Mulai bot dan tampilkan contoh                |
+| `/help`                | Tampilkan format transaksi                    |
+| `/bulan`               | Rekap bulanan bulan ini                       |
+| `/bulan MM YYYY`       | Rekap bulanan untuk bulan tertentu            |
+| `/last`                | Lihat transaksi hari ini/terakhir              |
+| `/edit` | Edit transaksi   |
+| `/hapus`         | Hapus transaksi             |
 
 ## Transaction Examples
 
