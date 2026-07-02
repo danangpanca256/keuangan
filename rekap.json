@@ -1,8 +1,8 @@
 {
-  "botToken": "8695453409:AAE00IX5Yel3A36MZZ-H3gKO19_94_uLcAE",
-  "ownerUserId": "chatid",
-  "spreadsheetId": "idsheet",
+  "botToken": "8695454309:AAE00IX5Ye13A36MZZ-H3gK019_94_uLcaE",
+  "ownerUserId": "7537928922",
+  "spreadsheetId": "1TxjrCasutL1Oar1J7mjNg5yexMHcxge8KvrDsXF-ev4",
   "sheetName": "Sheet1",
-  "credentialsFile": "./rekap-credentials.json",
+  "credentialsFile": "rekap-credentials.json",
   "timezone": "Asia/Jakarta"
 }
